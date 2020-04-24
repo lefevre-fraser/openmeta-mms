@@ -142,7 +142,33 @@ namespace CyPhyPET.Rules
                 .Concat(pet.Children.DriverCollection)
                 .Concat(pet.Children.ParametricExplorationCollection);
 
-            return UniqueNames(components);
+            return UniqueConstantsParametersAndOutputs(pet)
+                .Concat<RuleFeedbackBase>(UniqueNames(components));
+        }
+
+        public static IEnumerable<RuleFeedbackBase> UniqueConstantsParametersAndOutputs(CyPhy.ParametricExploration pet)
+        {
+            var result = new List<RuleFeedbackBase>();
+
+            var names = pet.Children.ConstantsCollection.SelectMany(
+                constants_block => constants_block.Children.MetricCollection.Select(
+                    constant => new KeyValuePair<string, string>(constant.Name, string.Format("{0}.{1} ({2})", constants_block.Name, constant.Name, constant.Kind))));
+            names = names.Concat(pet.Children.DriverCollection.SelectMany(
+                driver => driver.AllChildren.Where(child => new List<string>() { "DesignVariable", "IntermediateVariable", "Objective" }.Contains(child.Kind)).Select(
+                    child => new KeyValuePair<string, string>(child.Name, string.Format("{0}.{1} ({2})", driver.Name, child.Name, child.Kind)))));
+
+            foreach (var group in names.GroupBy(variable => variable.Key).Where(group => group.Count() > 1))
+            {
+                var feedback = new GenericRuleFeedback()
+                {
+                    FeedbackType = FeedbackTypes.Error,
+                    InvolvedObjectsByRole = null,
+                    Message = string.Format("PET requires unique names. Duplicate Names: {0}: {1}", group.Key, String.Join(",", group.Select(pair => pair.Value).ToArray()))
+                };
+                result.Add(feedback);
+            }
+
+            return result;
         }
 
         public static IEnumerable<RuleFeedbackBase> UniqueNames(IEnumerable<FCO> components)
@@ -155,6 +181,7 @@ namespace CyPhyPET.Rules
                 var feedback = new GenericRuleFeedback()
                 {
                     FeedbackType = FeedbackTypes.Error,
+                    InvolvedObjectsByRole = null,
                     Message = string.Format("PET requires unique names. Duplicate names: {0}", String.Join(",", dupNames.ToArray()))
                 };
                 result.Add(feedback);
